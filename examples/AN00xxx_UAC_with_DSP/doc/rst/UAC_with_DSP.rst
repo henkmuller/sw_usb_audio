@@ -69,6 +69,13 @@ interfaes, the second array carries all the data from the interfaces that
 shall be shipped to the USB host. You can chose to intercept and overwrite
 the sample values.
 
+Note that the values of the type are *unsigned*; a 32-bit number. The
+actual value depends on the data-types used for the audio, typical values
+are 16-bit PCM (the top 16-bits are a signed PCM value), 24-bit PCM (the
+top 24 bits are a signed PCM value), 32-bit PCM (the top 32 bits are a
+signed PCM value), or DSD (the 32 bits are PDM values, with the least
+significant bit representing the oldest 1-bit value).
+
 Suppose that we are just building a single-channel microphone; in this
 case, NUM_OUTPUTS=0 and NUM_INPUTS=1. We can run the input_samples through
 a cascaded_biquad in order equalise the microphone signal::
@@ -132,9 +139,87 @@ We need to look at two aspects:
 Transporting data to another core
 ---------------------------------
 
+The XCORE architecture offers a communication fabric to efficiently
+transport data between threads and cores. Communication works on
+*channels*. A *channel* has two ends, *A* and *B*, and data that is
+*output* into *A* has to be *input* on *B*, and data that is output into
+*B* has to be input from *A*.
 
+A channel is like a two way communication channel. It has very little
+buffering capacity, so both ends of the channel have to agree to
+communicate otherwise one side will wait for the other.
 
+The data types and functions for communicating data are:
 
+* ``chanend_t c`` a type holding the reference to one end of a *channel*
+
+* ``chan ch`` a type holding a complete channel with both ends
+
+* ``chan_out_word(c, x)`` a function that outputs a word over channel-end
+  ``c``.
+
+* ``x = chan_in_word(c)`` a function that inputs a word over channel-end
+  ``c``.
+
+* ``chan_out_buf_word(c, x, n)`` a function that outputs a ``n`` words from
+  array ``x`` over channel-end
+  ``c``.
+
+* ``chan_in_buf_word(c, x, n)`` a function that inputs ``n`` words over channel-end
+  ``c`` into array ``x``
+
+Typical code to off-load the DSP to the other tile involves a
+``UserBufferManagement`` function that outputs and inputs samples to the
+DSP task, a ``user_main.h`` function that declares the extra code needed to
+create the channels and start the DSP task, and a DSP task that receives
+and transmits the data.
+
+The UserBufferManagementCode is::
+
+  static chanend_t g_c;
+  
+  void UserBufferManagement(
+         unsigned output_samples[NUM_OUTPUTS],
+         unsigned  input_samples[NUM_INPUTS]
+  ) {
+    chan_out_buf_word(g_c, output_samples, NUM_OUTPUTS);
+    chan_out_buf_word(g_c, input_samples,  NUM_INPUTS);
+    chan_in_buf_word( g_c, output_samples, NUM_OUTPUTS);
+    chan_in_buf_word( g_c, input_samples,  NUM_INPUTS);
+  }
+
+  void UserBufferManagementSetChan(chanend_t c) {
+    g_c = c;
+  }
+
+The code to be included in the main program is as follows::
+
+  #define USER_MAIN_DECLARATIONS \
+    chan c_data_transport;
+
+  #define USER_MAIN_CORES \
+    on tile[USB_TILE]: {                                  \
+        UserBufferManagementSetChan(c_data_transport);    \
+    }                                                     \
+    on tile[!USB_TILE]: {                                 \
+        dsp_main(c_data_transport);                       \
+    }
+
+And finally the code to perform the DSP is the opposite of the
+buffer-management function::
+
+  void dsp_main(chanend_t c_data) {
+    int samples_for_usb [NUM_INPUTS + NUM_OUTPUTS];
+    int samples_from_usb[NUM_INPUTS + NUM_OUTPUTS];
+    while(1) {
+      chan_in_buf_word( c_data, &for_usb[0],           NUM_OUTPUTS);
+      chan_in_buf_word( c_data, &for_usb[NUM_OUTPUTS], NUM_INPUTS);
+      chan_out_buf_word(c_data, &from_usb[0],          NUM_OUTPUTS);
+      chan_out_buf_word(c_data, &from_usb[NUM_OUTPUTS],NUM_INPUTS);
+      // DSP from from_usb -> for_usb
+    }
+  }
+  
 Parallelising DSP
 -----------------
 
