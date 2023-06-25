@@ -5,6 +5,15 @@
 #define NUM_INPUTS 1
 #define NUM_OUTPUTS 2
 
+extern void UserBufferManagement(
+    unsigned output_samples[NUM_OUTPUTS],
+    unsigned  input_samples[NUM_INPUTS]);
+//:end
+
+extern void UserBufferManagementInit(void);
+//:end
+
+//:start
 int32_t filter_coeffs[4*5] = {
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
@@ -28,5 +37,6 @@ void UserBufferManagement(
 }
 
 void UserBufferManagementInit() {}
+//:end
 
 #endif // DSP_USB_THREAD

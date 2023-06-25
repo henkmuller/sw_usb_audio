@@ -6,7 +6,8 @@
 #include "xcore/parallel.h"
 #define NUM_INPUTS 1
 #define NUM_OUTPUTS 2
-  
+
+//:dmainstart  
 DECLARE_JOB(dsp_data_distributor, (chanend_t, chanend_t, chanend_t));
 DECLARE_JOB(dsp_thread0,  (chanend_t, chanend_t, chanend_t));
 DECLARE_JOB(dsp_thread1a, (chanend_t, chanend_t));
@@ -28,6 +29,7 @@ void dsp_main(chanend_t c_data) {
         PJOB(dsp_thread2,  (c_1a_to_2.end_b, c_1a_to_2.end_b, c_2_to_dist.end_a))
         );
 }
+//:dmainend
 
 static chanend_t g_c, g_c2;
   
@@ -52,29 +54,13 @@ void UserBufferManagementSetChan(chanend_t c) {
 
 void UserBufferManagementInit() {}
 
+
+//:dsp0start
 static int32_t filter_coeffs0[1*5] = {
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
 };
 
-static int32_t filter_coeffs1a[2*5] = {
-    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
-    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
-};
-
-static int32_t filter_coeffs1b[2*5] = {
-    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
-    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
-};
-
-static int32_t filter_coeffs2[1*5] = {
-    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
-};
-
 static int32_t filter_states0[2][1*4];
-static int32_t filter_states1a[2][2*4];
-static int32_t filter_states1b[2][2*4];
-static int32_t filter_states2[2][1*4];
-
 
 void dsp_thread0(chanend_t c_fromusb,
                  chanend_t c_to1a, chanend_t c_to1b) {     
@@ -97,6 +83,15 @@ void dsp_thread0(chanend_t c_fromusb,
         chan_out_buf_word(c_to1b, &for_1[0], NUM_OUTPUTS);
     }
 }
+//:dsp0end
+
+//:dsp1astart
+static int32_t filter_states1a[2][2*4];
+
+static int32_t filter_coeffs1a[2*5] = {
+    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
+    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
+};
 
 void dsp_thread1a(chanend_t c_from0,
                   chanend_t c_to2) {     
@@ -118,6 +113,15 @@ void dsp_thread1a(chanend_t c_from0,
         chan_out_buf_word(c_to2, &for_2[0], NUM_OUTPUTS);
     }
 }
+//:dsp1aend
+
+//:dsp1bstart
+static int32_t filter_states1b[2][2*4];
+
+static int32_t filter_coeffs1b[2*5] = {
+    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
+    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
+};
 
 void dsp_thread1b(chanend_t c_from0,
                   chanend_t c_to2) {     
@@ -140,6 +144,14 @@ void dsp_thread1b(chanend_t c_from0,
         chan_out_buf_word(c_to2, &for_2[0], NUM_OUTPUTS);
     }
 }
+//:dsp1bend
+
+//:dsp2start
+static int32_t filter_states2[2][1*4];
+
+static int32_t filter_coeffs2[1*5] = {
+    0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
+};
 
 void dsp_thread2(chanend_t c_from1a, chanend_t c_from1b,
                  chanend_t c_todist) {     
@@ -170,8 +182,10 @@ void dsp_thread2(chanend_t c_from1a, chanend_t c_from1b,
         chan_out_buf_word(c_todist, &for_usb[0], NUM_OUTPUTS);
     }
 }
+//:dsp2end
 
 
+//:diststart
 void dsp_data_distributor(chanend_t c_usb, chanend_t c_to0, chanend_t c_from2) {     
     int for_usb [NUM_OUTPUTS];
     int from_usb[NUM_OUTPUTS];
@@ -185,6 +199,7 @@ void dsp_data_distributor(chanend_t c_usb, chanend_t c_to0, chanend_t c_from2) {
         chan_in_buf_word( c_from2, &for_usb[0], NUM_OUTPUTS);
     }
 }
+//:distend
 
 
 #endif // DSP_PIPELINE

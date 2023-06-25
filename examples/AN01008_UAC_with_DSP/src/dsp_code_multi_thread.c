@@ -5,7 +5,7 @@
 #include "xcore/channel.h"
 #define NUM_INPUTS 1
 #define NUM_OUTPUTS 2
-
+//:ustart
 static chanend_t g_c, g_c2;
   
 void UserBufferManagement(
@@ -27,9 +27,11 @@ void UserBufferManagementSetChan(chanend_t c, chanend_t c2) {
     g_c2 = c2;
 }
 
-
 void UserBufferManagementInit() {}
+//:uend
 
+
+//:dstart
 static int32_t filter_coeffs[4*5] = {
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
@@ -58,6 +60,7 @@ void dsp_main1(chanend_t c_data) {
         }
     }
 }
+//:dend
 
 void dsp_main2(chanend_t c_data) {
     int for_usb [NUM_INPUTS/2 + NUM_OUTPUTS/2];

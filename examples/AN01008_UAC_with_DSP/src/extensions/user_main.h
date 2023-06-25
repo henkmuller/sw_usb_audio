@@ -33,18 +33,17 @@ extern port p_sda;
 
 #ifdef DSP_SINGLE_THREAD
 
-#define USER_MAIN_DECLARATIONS \
+//:singlestart
+#define USER_MAIN_DECLARATIONS  \
     chan c_data_transport;      \
     interface i2c_master_if i2c[1];
 
 #define USER_MAIN_CORES \
-    on tile[0]: {                                  \
-        UserBufferManagementSetChan(c_data_transport);    \
-    }                                                     \
     on tile[1]: {                                 \
         dsp_main(c_data_transport);                       \
     }                                                     \
     on tile[0]: {                                         \
+        UserBufferManagementSetChan(c_data_transport);    \
         ctrlPort();                                                     \
         i2c_master(i2c, 1, p_scl, p_sda, 100);                          \
     }                                                                   \
@@ -54,7 +53,7 @@ extern port p_sda;
             i_i2c_client = i2c[0];                                      \
         }                                                         \
     }
-
+//:singleend
 
 #endif
 

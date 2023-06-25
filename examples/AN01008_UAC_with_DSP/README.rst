@@ -1,44 +1,20 @@
 XMOS xCORE-AI USB Audio
 =======================
 
-:scope: Example
-:description: USB Audio application for xCORE-AI MC Audio
-:keywords: USB, UAC
-:boards: XCORE-AI MC AUDIO (rev 1.0)
+This is a sample program on how to combine USB Audio with DSP. THe
+documenation is in doc/rst; or you can search for XMOS App note AN01008 in
+order to get a PDF.
 
-Overview
-........
+The documentation describes four methods for integrating USB. These can be
+built as follows:
 
-The firmware provides a high-speed USB Audio device designed to be compliant to version 2.0 of the USB Audio Class Specification based on the XMOS AI device.
+* ``xmake CONFIG=USB_THREAD``, most source code in ``src/dsp_code_usb_thread.c``
 
+* ``xmake CONFIG=SINGLE_THREAD``, most source code in ``src/dsp_code_single_thread.c``
 
-Key Features
-............
+* ``xmake CONFIG=MULTI_THREAD``, most source code in ``src/dsp_code_multi_thread.c``
 
-The app_usb_aud_xk_316_mc application is designed to run on the xCORE-AI MC Audio Board in. It uses the XMOS USB Audio framework to implement a USB Audio device with the following key features:
+* ``xmake CONFIG=PIPELINE``, most source code in ``src/dsp_code_pipeline.c``
 
-- USB Audio Class 1.0/2.0 Compliant
-
-- Fully Asynchronous operation
-
-- 8 channels analogue input and 8 channels analogue output (Via I2S to 4 x Stereo DACs and 2 x Quad-channel ADCs)
-
-- S/PDIF output (via COAX connector)
-
-- Supports for the following sample frequencies: 44.1, 48, 88.2, 96, 176.4, 192kHz
-
-- MIDI input and output
-
-Known Issues
-............
-
-- Currently this application uses the internal Application PLL to generate fixed master clock frequencies only. Therefore syncing to any external stream is not possible (i.e. ADAT/SPDIF Rx)
-
-See README in sw_usb_audio for general issues.
-
-Support
-.......
-
-For all support issues please visit http://www.xmos.com/support
-
+``xmake`` without arguments builds all four.
 

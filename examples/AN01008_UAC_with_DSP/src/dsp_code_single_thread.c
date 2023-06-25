@@ -6,6 +6,7 @@
 #define NUM_INPUTS 1
 #define NUM_OUTPUTS 2
 
+//:ustart
 static chanend_t g_c;
   
 void UserBufferManagement(
@@ -23,7 +24,9 @@ void UserBufferManagementSetChan(chanend_t c) {
 }
 
 void UserBufferManagementInit() {}
+//:uend
 
+//:dstart
 static int32_t filter_coeffs[4*5] = {
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
     0x10000000,  0x10000000,  0x10000000,  0x10000000,  0x10000000,
@@ -50,5 +53,6 @@ void dsp_main(chanend_t c_data) {
         }
     }
 }
+//:dend
 
 #endif // DSP_SINGLE_THREAD

@@ -68,12 +68,11 @@ API offered by USB Audio
 ------------------------
 
 The USB Audio stack provides one function that you need to override in
-order to add any DSP capability to your system::
+order to add any DSP capability to your system:
 
-  void UserBufferManagement(
-         unsigned output_samples[NUM_USB_CHAN_OUT],
-         unsigned  input_samples[NUM_USB_CHAN_IN]
-  );
+.. literalinclude:: dsp_code_usb_thread.c
+   :start-on: extern void UserBufferManagement(
+   :end-before: //:end
 
 For brevity we use ``NUM_OUTPUTS`` and ``NUM_INPUTS`` throughout this code
 to refer to the number of output audio-channels (``NUM_USB_CHAN_OUT``) and
@@ -86,11 +85,13 @@ the interfaces, the second array carries all the data from the interfaces
 that shall be shipped to the USB host. You can chose to intercept and
 overwrite the samples stored in these arrays.
 
-A second function that you can overwrite is::
-  
-  void UserBufferManagementInit(void);
+A second function that you can overwrite is:
 
-Which is called once before the first call to ``UserBufferManagement``. The
+.. literalinclude:: dsp_code_usb_thread.c
+   :start-on: extern void UserBufferManagementInit(
+   :end-before: //:end
+
+This function is called once before the first call to ``UserBufferManagement``. The
 code in this document does not require this function, but other code may
 require it.
 
@@ -101,43 +102,18 @@ top 24 bits are a signed PCM value), 32-bit PCM (the top 32 bits are a
 signed PCM value), or DSD (the 32 bits are PDM values, with the least
 significant bit representing the oldest 1-bit value).
 
+[[ Change this text ]]
 Suppose that we are just building a single-channel microphone; in this
 case, NUM_OUTPUTS=0 and NUM_INPUTS=1. We can run the input_samples through
-a cascaded_biquad in order equalise the microphone signal::
-
-  int32_t filter_coeffs[4*5] = { ... };
-  int32_t filter_states[4*4];
-  
-  void UserBufferManagement(
-         unsigned output_samples[NUM_OUTPUTS],
-         unsigned  input_samples[NUM_INPUTS])
-  {
-      input_samples[0] = dsp_filters_biquad((int32_t) input_samples[0],
-                                            fiter_coeffs,
-                                            filter_states,
-                                            4,
-                                            28);
-  }
+a cascaded_biquad in order equalise the microphone signal.
 
 Indeed, by instead applying this to the ``output_samples`` array we can
 equalise a USB speaker, and by applying two independent cascaded biquads to
-the two channels we can equalise stereo speakers::
+the two channels we can equalise stereo speakers:
 
-  int32_t filter_coeffs[4*5] = { ... };
-  int32_t filter_states[2][4*4];
-
-  void UserBufferManagement(
-         unsigned output_samples[NUM_OUTPUTS],
-         unsigned  input_samples[NUM_INPUTS])
-  {
-      for(int i = 0; i < 2; i++) {
-        output_samples[i] = dsp_filters_biquad((int32_t) output_samples[i],
-                                               fiter_coeffs,
-                                               filter_states[i],
-                                               4,
-                                               28);
-    }
-  }
+.. literalinclude:: dsp_code_usb_thread.c
+   :start-after: //:start
+   :end-before: //:end
 
 By combining input_samples and output_samples one can mix data from
 interfaces or USB into USB or the interfaces.
@@ -249,51 +225,24 @@ DSP task, a ``user_main.h`` function that declares the extra code needed to
 create the channels and start the DSP task, and a DSP task that receives
 and transmits the data.
 
-The UserBufferManagement code is::
+The UserBufferManagement code is:
 
-  static chanend_t g_c;
-  
-  void UserBufferManagement(
-         unsigned output_samples[NUM_OUTPUTS],
-         unsigned  input_samples[NUM_INPUTS]
-  ) {
-    chan_out_buf_word(g_c, output_samples, NUM_OUTPUTS);
-    chan_out_buf_word(g_c, input_samples,  NUM_INPUTS);
-    chan_in_buf_word( g_c, output_samples, NUM_OUTPUTS);
-    chan_in_buf_word( g_c, input_samples,  NUM_INPUTS);
-  }
+.. literalinclude:: dsp_code_single_thread.c
+   :start-after: //:ustart
+   :end-before: //:uend
 
-  void UserBufferManagementSetChan(chanend_t c) {
-    g_c = c;
-  }
+The code to be included in the main program is as follows:
 
-The code to be included in the main program is as follows::
-
-  #define USER_MAIN_DECLARATIONS \
-    chan c_data_transport;
-
-  #define USER_MAIN_CORES \
-    on tile[USB_TILE]: {                                  \
-        UserBufferManagementSetChan(c_data_transport);    \
-    }                                                     \
-    on tile[!USB_TILE]: {                                 \
-        dsp_main(c_data_transport);                       \
-    }
+.. literalinclude:: extensions/user_main.h
+   :start-after: //:singlestart
+   :end-before: //:singleend
 
 And finally the code to perform the DSP is the opposite of the
-buffer-management function::
+buffer-management function:
 
-  void dsp_main(chanend_t c_data) {
-    int samples_for_usb [NUM_INPUTS + NUM_OUTPUTS];
-    int samples_from_usb[NUM_INPUTS + NUM_OUTPUTS];
-    while(1) {
-      chan_in_buf_word( c_data, &for_usb[0],           NUM_OUTPUTS);
-      chan_in_buf_word( c_data, &for_usb[NUM_OUTPUTS], NUM_INPUTS);
-      chan_out_buf_word(c_data, &from_usb[0],          NUM_OUTPUTS);
-      chan_out_buf_word(c_data, &from_usb[NUM_OUTPUTS],NUM_INPUTS);
-      // DSP from from_usb -> for_usb
-    }
-  }
+.. literalinclude:: dsp_code_single_thread.c
+   :start-after: //:dstart
+   :end-before: //:dend
 
 The execution of two of the tasks (the USB Task calling
 ``UserBufferManagement``) and the DSP task (``dsp_main``) is shown below
@@ -376,59 +325,25 @@ Like before, we use channels to communicate between the DSP tasks, what is
 new is that we have to create those DSP tasks, and create the channels
 between them. The only difference is in the ``dsp_main`` function.
 
-The UserBufferManagement code is::
 
-  static chanend_t g_c, g_c2;
-  
-  void UserBufferManagement(
-         unsigned output_samples[NUM_OUTPUTS],
-         unsigned  input_samples[NUM_INPUTS]
-  ) {
-    chan_out_buf_word(g_c, output_samples, NUM_OUTPUTS);
-    chan_out_buf_word(g_c, input_samples,  NUM_INPUTS);
-    chan_in_buf_word( g_c, output_samples, NUM_OUTPUTS/2);
-    chan_in_buf_word( g_c, input_samples,  NUM_INPUTS/2);
-    chan_out_buf_word(g_c, output_samples, NUM_OUTPUTS);
-    chan_out_buf_word(g_c, input_samples,  NUM_INPUTS);
-    chan_in_buf_word( g_c, output_samples+NUM_OUTPUTS/2, NUM_OUTPUTS/2);
-    chan_in_buf_word( g_c, input_samples+NUM_INPUTS/2,  NUM_INPUTS/2);
-  }
+The UserBufferManagement code is:
 
-  void UserBufferManagementSetChan(chanend_t c, chanend_t c2) {
-    g_c = c;
-    g_c2 = c2;
-  }
+.. literalinclude:: dsp_code_multi_thread.c
+   :start-after: //:ustart
+   :end-before: //:uend
 
-The code to be included in the main program is as follows::
+The code to be included in the main program is as follows:
 
-  #define USER_MAIN_DECLARATIONS \
-    chan c1, c2;
-
-  #define USER_MAIN_CORES \
-    on tile[USB_TILE]: {                                  \
-        UserBufferManagementSetChan(c1, c2);              \
-    }                                                     \
-    on tile[!USB_TILE]: {                                 \
-        dsp_main1(c1);                                    \
-    }                                                     \
-    on tile[!USB_TILE]: {                                 \
-        dsp_main2(c2);                                    \
-    }
+.. literalinclude:: extensions/user_main.h
+   :start-after: //:multistart
+   :end-before: //:multiend
 
 And finally the code to perform the DSP is the opposite of the
-buffer-management function::
+buffer-management function:
 
-  void dsp_main1(chanend_t c_data) {
-    int samples_for_usb [NUM_INPUTS/2 + NUM_OUTPUTS/2];
-    int samples_from_usb[NUM_INPUTS + NUM_OUTPUTS];
-    while(1) {
-      chan_in_buf_word( c_data, &for_usb[0],           NUM_OUTPUTS);
-      chan_in_buf_word( c_data, &for_usb[NUM_OUTPUTS], NUM_INPUTS);
-      chan_out_buf_word(c_data, &from_usb[0],          NUM_OUTPUTS/2);
-      chan_out_buf_word(c_data, &from_usb[NUM_OUTPUTS/2],NUM_INPUTS/2);
-      // DSP from from_usb -> for_usb
-    }
-  }
+.. literalinclude:: dsp_code_multi_thread.c
+   :start-after: //:dstart
+   :end-before: //:dend
 
 ``dsp_main2`` is identical, and the code may be shared provided they have
 separate state to operate on/
@@ -457,125 +372,49 @@ The pipeline that we are building requires a bit of plumbing to make it all
 work but the code is reasonably straightforward otherwise.
 
 DSP task 1B is implemented by ``dsp_thread1b`` and picks up data from
-the distributor, and outputs data to dsp tasks 1A and 1B::
+the distributor, and outputs data to dsp tasks 1A and 1B:
 
-  void dsp_thread0(chanend_t c_fromusb,
-                    chanend_t c_to1a, chanend_t c_to1b) {     
-    int from_usb[NUM_OUTPUTS];
-    int for_1[NUM_OUTPUTS];
-    while(1) {
-      // Pick up my chunk of data to work on
-      chan_in_buf_word(c_fromusb, &from_usb[0], NUM_OUTPUTS);
-
-      ..... Perform DSP on from_usb into for_usb .....
-      
-      // And deliver my answer back
-      chan_out_buf_word(c_to1a, &for_1[0], NUM_OUTPUTS);
-      chan_out_buf_word(c_to1b, &for_1[0], NUM_OUTPUTS);
-    }
-  }
+.. literalinclude:: dsp_code_pipeline.c
+   :start-after: //:dsp0start
+   :end-before: //:dsp0end
 
 DSP task 1A is implemented by ``dsp_thread1a`` and picks up data from
-the DSP task 0, and outputs data to dsp task 2::
+the DSP task 0, and outputs data to dsp task 2:
 
-  void dsp_thread1a(chanend_t c_from0,
-                    chanend_t c_to2) {     
-    int from_0[NUM_OUTPUTS];
-    int for_2[NUM_OUTPUTS];
-    while(1) {
-      // Pick up my chunk of data to work on
-      chan_in_buf_word(c_from0, &from_0[0], NUM_OUTPUTS);
-
-      ..... Perform DSP on from_usb into for_usb .....
-      
-      // And deliver my answer back
-      chan_out_buf_word(c_to2, &for_2[0], NUM_OUTPUTS);
-    }
-  }
+.. literalinclude:: dsp_code_pipeline.c
+   :start-after: //:dsp1astart
+   :end-before: //:dsp1aend
 
 DSP task 1B is implemented by ``dsp_thread1b`` and picks up data from
-the DSP task 0, and outputs data to dsp task 2::
+the DSP task 0, and outputs data to dsp task 2:
 
-  void dsp_thread1b(chanend_t c_from0,
-                    chanend_t c_to2) {     
-    int from_0[NUM_OUTPUTS];
-    int for_2[NUM_OUTPUTS];
-    while(1) {
-      // Pick up my chunk of data to work on
-      chan_in_buf_word(c_from0, &from_0[0], NUM_OUTPUTS);
-
-      ..... Perform DSP on from_usb into for_usb .....
-      
-      // And deliver my answer back
-      chan_out_buf_word(c_to2, &for_2[0], NUM_OUTPUTS);
-    }
-  }
+.. literalinclude:: dsp_code_pipeline.c
+   :start-after: //:dsp1bstart
+   :end-before: //:dsp1bend
 
 Similarly, DSP task 2 is implemented by dsp_thread2 and picks up data from
 the DSP tasks 1A and 1B, and outputs data t the distribution task. The
 weird part of the code is that we need to stick some data into the output
 channel end prior to starting the loop - otherwise the data_distribution
-task would hang::
+task would hang:
 
-  void dsp_thread2(chanend_t c_from1a, chanend_t c_from1b,
-                   chanend_t c_todist) {     
-    int from_1a[NUM_OUTPUTS];
-    int from_1b[NUM_OUTPUTS];
-    int for_usb[NUM_OUTPUTS];
-    chan_out_buf_word(c_todist, &for_usb[0], NUM_OUTPUTS); // Sample -2
-    chan_out_buf_word(c_todist, &for_usb[0], NUM_OUTPUTS); // Sample -1
-    while(1) {
-      // Pick up my chunk of data to work on
-      chan_in_buf_word(c_from1a, &from_1a[0], NUM_OUTPUTS);
-      chan_in_buf_word(c_from1b, &from_1b[0], NUM_OUTPUTS);
-
-      ..... Perform DSP on from_usb into for_usb .....
-      
-      // And deliver my answer back
-      chan_out_buf_word(c_todist, &for_usb[0], NUM_OUTPUTS);
-    }
-  }
+.. literalinclude:: dsp_code_pipeline.c
+   :start-after: //:dsp2start
+   :end-before: //:dsp2end
 
 The distributor picks up data from the USB stack, posts it to DSP task 0,
-and picks up an answer from DSP task 2::
+and picks up an answer from DSP task 2:
 
-  void dsp_data_distributor(chanend_t c_usb, chanend_t c_to0, chanend_t c_from2) {     
-    int for_usb [NUM_OUTPUTS];
-    int from_usb[NUM_OUTPUTS];
-    while(1) {
-      // First deal with the USB side
-      chan_in_buf_word( c_data, &from_usb[0], NUM_OUTPUTS);
-      chan_out_buf_word(c_data, &for_usb[0],  NUM_OUTPUTS);
-      // Now supply all data to both DSP tasks
-      chan_out_buf_word(c_dsp0, &from_usb[0], NUM_OUTPUTS);
-      // Now pick up data from DSP task 2
-      chan_in_buf_word( c_from2, &for_usb[0],             NUM_OUTPUTS);
-    }
-  }
+.. literalinclude:: dsp_code_pipeline.c
+   :start-after: //:diststart
+   :end-before: //:distend
 
 Finally, we need the code to start all the parallel threads. This code
-starts five tasks, and connects them up using six channels::
-  
-  DECLARE_JOB(dsp_data_distributor, (chanend_t, chanend_t, chanend_t));
-  DECLARE_JOB(dsp_thread0,  (chanend_t, chanend_t, chanend_t));
-  DECLARE_JOB(dsp_thread1a, (chanend_t, chanend_t));
-  DECLARE_JOB(dsp_thread1b, (chanend_t, chanend_t));
-  DECLARE_JOB(dsp_thread2,  (chanend_t, chanend_t, chanend_t));
+starts five tasks, and connects them up using six channels:
 
-  void dsp_main(chanend_t c_data) {
-    channel_t c_dist_to_0 = chan_alloc();
-    channel_t c_0_to_1a   = chan_alloc();
-    channel_t c_0_to_1b   = chan_alloc();
-    channel_t c_1a_to_2   = chan_alloc();
-    channel_t c_1b_to_2   = chan_alloc();
-    channel_t c_2_to_dist = chan_alloc();
-    PAR_JOBS(
-        PJOB(dsp_data_distributor, (c_data, c_dist_to_0.end_a, c_2_to_dist.end_b)),
-        PJOB(dsp_thread0,  (c_dist_to_0.end_b, c_0_to_1a.end_a, c_0_to_1b.end_a)),
-        PJOB(dsp_thread1a, (c_0_to_1a.end_b, c_1a_to_2.end_a)),
-        PJOB(dsp_thread1b, (c_0_to_1b.end_b, c_1b_to_2.end_a)),
-        PJOB(dsp_thread2,  (c_1a_to_2.end_b, c_1a_to_2.end_b, c_2_to_dist.end_a)),
-  }
+.. literalinclude:: dsp_code_pipeline.c
+   :start-after: //:dmainstart
+   :end-before: //:dmainend
 
 In order to show how this code works, we show a diagram in
 :ref:`extending_usb_audio_with_digital_signal_processing_pipeline_timing`. 
