@@ -24,22 +24,22 @@ USED_MODULES = lib_xua lib_i2c lib_dsp
 #
 INCLUDE_ONLY_IN_PIPELINE =
 XCC_FLAGS_PIPELINE = $(BUILD_FLAGS)        -DI2S_CHANS_DAC=2 \
-                                           -DI2S_CHANS_ADC=0 \
+                                           -DI2S_CHANS_ADC=4 \
 									       -DDSP_PIPELINE
 
 INCLUDE_ONLY_IN_MULTI_THREAD =
 XCC_FLAGS_MULTI_THREAD = $(BUILD_FLAGS)    -DI2S_CHANS_DAC=2 \
-                                           -DI2S_CHANS_ADC=0 \
+                                           -DI2S_CHANS_ADC=4 \
 									       -DDSP_MULTI_THREAD
 
 INCLUDE_ONLY_IN_SINGLE_THREAD =
 XCC_FLAGS_SINGLE_THREAD = $(BUILD_FLAGS)   -DI2S_CHANS_DAC=2 \
-                                           -DI2S_CHANS_ADC=0 \
+                                           -DI2S_CHANS_ADC=4 \
 									       -DDSP_SINGLE_THREAD
 
 INCLUDE_ONLY_IN_USB_THREAD =
 XCC_FLAGS_USB_THREAD = $(BUILD_FLAGS)      -DI2S_CHANS_DAC=2 \
-                                           -DI2S_CHANS_ADC=0 \
+                                           -DI2S_CHANS_ADC=4 \
 									       -DDSP_USB_THREAD
 
 

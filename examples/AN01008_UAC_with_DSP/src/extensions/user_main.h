@@ -31,6 +31,28 @@ extern void dsp_main(chanend t);
 extern port p_scl;
 extern port p_sda;
 
+#ifdef DSP_USB_THREAD
+
+//:usbstart
+#define USER_MAIN_DECLARATIONS  \
+    interface i2c_master_if i2c[1];
+
+#define USER_MAIN_CORES \
+    on tile[0]: {                                         \
+        ctrlPort();                                                     \
+        i2c_master(i2c, 1, p_scl, p_sda, 100);                          \
+    }                                                                   \
+    on tile[1]: {                                                       \
+        unsafe                                                          \
+        {                                                               \
+            i_i2c_client = i2c[0];                                      \
+        }                                                         \
+    }
+//:usbend
+
+#endif
+
+
 #ifdef DSP_SINGLE_THREAD
 
 //:singlestart
@@ -43,11 +65,11 @@ extern port p_sda;
         dsp_main(c_data_transport);                       \
     }                                                     \
     on tile[0]: {                                         \
-        UserBufferManagementSetChan(c_data_transport);    \
         ctrlPort();                                                     \
         i2c_master(i2c, 1, p_scl, p_sda, 100);                          \
     }                                                                   \
     on tile[1]: {                                                       \
+        UserBufferManagementSetChan(c_data_transport);    \
         unsafe                                                          \
         {                                                               \
             i_i2c_client = i2c[0];                                      \
@@ -59,14 +81,12 @@ extern port p_sda;
 
 #ifdef DSP_MULTI_THREAD
 
+//:multistart
 #define USER_MAIN_DECLARATIONS                     \
     chan c1, c2;                                   \
     interface i2c_master_if i2c[1];
 
 #define USER_MAIN_CORES \
-    on tile[0]: {                                  \
-        UserBufferManagementSetChan(c1, c2);              \
-    }                                                     \
     on tile[1]: {                                 \
         dsp_main1(c1);                                    \
     }                                                     \
@@ -78,11 +98,13 @@ extern port p_sda;
         i2c_master(i2c, 1, p_scl, p_sda, 100);            \
     }                                                     \
     on tile[1]: {                                         \
+        UserBufferManagementSetChan(c1, c2);              \
         unsafe                                            \
         {                                                 \
             i_i2c_client = i2c[0];                        \
         }                                                 \
     }
+//:multiend
 
 
 #endif
@@ -94,9 +116,6 @@ extern port p_sda;
     interface i2c_master_if i2c[1];
 
 #define USER_MAIN_CORES \
-    on tile[0]: {                                         \
-        UserBufferManagementSetChan(c);                   \
-    }                                                     \
     on tile[1]: {                                         \
         dsp_main(c);                                      \
     }                                                     \
@@ -105,6 +124,7 @@ extern port p_sda;
         i2c_master(i2c, 1, p_scl, p_sda, 100);            \
     }                                                     \
     on tile[1]: {                                         \
+        UserBufferManagementSetChan(c);                   \
         unsafe                                            \
         {                                                 \
             i_i2c_client = i2c[0];                        \

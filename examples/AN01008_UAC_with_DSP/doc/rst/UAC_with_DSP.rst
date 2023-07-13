@@ -142,6 +142,19 @@ ease-of-use.
 * [lib_audio_effects](https://github.com/xmos/lib_audio_effects) for audio effects
   functions.
 
+In this application note we use as a running example a cascaded biquad
+filter that is set to a fixed operation:
+
+* First stage Peaking Filter 200 Hz, 1 octave -20 dB, 
+
+* Second stage Peaking Filter 400 Hz, 1 octave +10 dB, 
+
+* Third stage Peaking Filter 800 Hz, 1 octave -20 dB,
+
+* Fourth stage Peaking Filter 1600 Hz, 1 octave +10 dB, 
+
+This is not a necessarily a realistic set of filters, but it is something
+that can easily be heard.
 
 Timing requirements
 -------------------
@@ -199,9 +212,9 @@ communicate otherwise one side will wait for the other.
 The data types and functions for communicating data provided by
 ``lib_xcore`` are:
 
-* ``chanend_t c`` a type holding the reference to one end of a *channel*
+* ``chanend_t c        `` a type holding the reference to one end of a *channel*
 
-* ``chan ch`` a type holding a complete channel with both ends
+* ``chan ch            `` a type holding a complete channel with both ends
 
 * ``chan_out_word(c, x)`` a function that outputs a word ``x`` over channel-end
   ``c``.
@@ -213,7 +226,7 @@ The data types and functions for communicating data provided by
   array ``x`` over channel-end
   ``c``.
 
-* ``chan_in_buf_word(c, x, n)`` a function that inputs ``n`` words over channel-end
+* ``chan_in_buf_word(c, x, n)  `` a function that inputs ``n`` words over channel-end
   ``c`` into array ``x``
 
 We could also use XC instead of C and lib-xcore; the resulting behaviour
