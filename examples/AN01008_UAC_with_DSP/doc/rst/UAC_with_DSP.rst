@@ -1,10 +1,6 @@
 Extending USB Audio with Digital Signal Processing
 ==================================================
 
-TODO:
-  All code fragments need to be written in actual C, coded, and tested.
-  These are blind programming so far.
-  
 In this app note we describe how to extend the XMOS USB Audio stack with
 DSP capabilities.
 
@@ -28,10 +24,10 @@ you to include DSP algorithms inside the stack.
 For reference, we refer to the following repositories that you may want to
 use:
 
-* ``git@github.com:xmos/sw_usb_audio.git`` for the USB Audio reference
+* <http://github.com/xmos/sw_usb_audio.git> for the USB Audio reference
   design
 
-* ``git@github.com:xmos/lib_xua.git`` for the USB Audio library
+* <https://github.com/xmos/lib_xua.git> for the USB Audio library
   design
 
 Introduction to USB Audio
@@ -47,9 +43,9 @@ The basic structure or USB Audio is shown below in
             Structure of USB Audio
 
 On the left is a USB interface to the host - this is dealt with by the XUD
-and XUA libraries. XUD is the low level USB library for XCORE
-(https://www.github.com/xmos/lib_xud), XUA is the USB-Audio protocol
-implementation on xcore (https://www.github.com/xmos/lib_xua).
+and XUA libraries. XUD <https://www.github.com/xmos/lib_xud> is the low
+level USB library for XCORE, XUA <https://www.github.com/xmos/lib_xua> is the USB-Audio protocol
+implementation on xcore.
 On the right is a series of interfaces (ADC, DAC,
 S/PDIF, ADAT). USB Audio provides a path from the left to the right (USB
 host computer to the interfaces), this is called the output path; and a
@@ -102,21 +98,17 @@ top 24 bits are a signed PCM value), 32-bit PCM (the top 32 bits are a
 signed PCM value), or DSD (the 32 bits are PDM values, with the least
 significant bit representing the oldest 1-bit value).
 
-[[ Change this text ]]
-Suppose that we are just building a single-channel microphone; in this
-case, NUM_OUTPUTS=0 and NUM_INPUTS=1. We can run the input_samples through
-a cascaded_biquad in order equalise the microphone signal.
-
-Indeed, by instead applying this to the ``output_samples`` array we can
-equalise a USB speaker, and by applying two independent cascaded biquads to
-the two channels we can equalise stereo speakers:
+In this example we just modify the output path - and we use NUM_OUTPUTS=2
+and NUM_INPUTS=4. We can run the output_samples through a cascaded_biquad
+in order equalise the output signal. One can go further an apply independent
+biquads to the two channels to independently equalise stereo speakers:
 
 .. literalinclude:: dsp_code_usb_thread.c
    :start-after: //:start
    :end-before: //:end
 
-By combining input_samples and output_samples one can mix data from
-interfaces or USB into USB or the interfaces.
+If one wants, one can combine input_samples and output_samples in order to
+mix data from interfaces or USB into USB or the interfaces.
 
 The sample rate depends on the environment. The USB application typically
 has a list of supported sample rates (this may just be one sample-rate),
@@ -131,15 +123,15 @@ There are a few repositories with DSP and general maths functions
 available, with different trade-offs between speed, accuracy, and
 ease-of-use.
 
-* [lib_xcore_math](http://github.com/xmos/lib_xcore_math) is the xcore.ai library
+* <https://github.com/xmos/lib_xcore_math> is the xcore.ai library
   for high performance maths functions. Many of them are optimised to make
   use of the vector unit and use 40-bit accumulators.
 
-* [lib_dsp](https://github.com/xmos/lib_dsp) for high-resolution maths functions
+* <https://github.com/xmos/lib_dsp> for high-resolution maths functions
   that execute on the CPU often using 64-bit accumulators. These functions
   are not as fast as ``lib_xcore_math``
 
-* [lib_audio_effects](https://github.com/xmos/lib_audio_effects) for audio effects
+* <https://github.com/xmos/lib_audio_effects> for audio effects
   functions.
 
 In this application note we use as a running example a cascaded biquad
@@ -212,21 +204,21 @@ communicate otherwise one side will wait for the other.
 The data types and functions for communicating data provided by
 ``lib_xcore`` are:
 
-* ``chanend_t c        `` a type holding the reference to one end of a *channel*
+* ``chanend_t c        ;`` a type holding the reference to one end of a *channel*
 
-* ``chan ch            `` a type holding a complete channel with both ends
+* ``chan ch            ;`` a type holding a complete channel with both ends
 
-* ``chan_out_word(c, x)`` a function that outputs a word ``x`` over channel-end
+* ``chan_out_word(c, x);`` a function that outputs a word ``x`` over channel-end
   ``c``.
 
-* ``x = chan_in_word(c)`` a function that inputs a word ``x`` over channel-end
+* ``x = chan_in_word(c);`` a function that inputs a word ``x`` over channel-end
   ``c``.
 
-* ``chan_out_buf_word(c, x, n)`` a function that outputs ``n`` words from
+* ``chan_out_buf_word(c, x, n);`` a function that outputs ``n`` words from
   array ``x`` over channel-end
   ``c``.
 
-* ``chan_in_buf_word(c, x, n)  `` a function that inputs ``n`` words over channel-end
+* ``chan_in_buf_word(c, x, n) ;`` a function that inputs ``n`` words over channel-end
   ``c`` into array ``x``
 
 We could also use XC instead of C and lib-xcore; the resulting behaviour
@@ -338,6 +330,7 @@ Like before, we use channels to communicate between the DSP tasks, what is
 new is that we have to create those DSP tasks, and create the channels
 between them. The only difference is in the ``dsp_main`` function.
 
+|newpage|
 
 The UserBufferManagement code is:
 
