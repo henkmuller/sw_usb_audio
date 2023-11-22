@@ -9,7 +9,7 @@
 #include "../../../shared/version.h"
 
 /*
- * Device configuration option defines to override default defines found devicedefines.h
+ * Device configuration option defines to override default defines found in lib_xua/api/xua_conf_default.h
  *
  * Build can be customised but changing and adding defines here
  *
@@ -26,9 +26,9 @@
 #define AUDIO_IO_TILE      (1)
 #define XUD_TILE           (0)
 
-/* Mixer core enabled by default */
+/* Mixer core disabled by default */
 #ifndef MIXER
-#define MIXER              (1)
+#define MIXER              (0)
 #endif
 
 /* Mixing disabled by default */

@@ -3,8 +3,8 @@
 #define BCD_DEVICE_J       (7)
 #endif
 #ifndef BCD_DEVICE_M
-#define BCD_DEVICE_M       (1)
+#define BCD_DEVICE_M       (3)
 #endif
 #ifndef BCD_DEVICE_N
-#define BCD_DEVICE_N       (0)
+#define BCD_DEVICE_N       (1)
 #endif

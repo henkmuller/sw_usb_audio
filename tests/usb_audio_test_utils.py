@@ -25,17 +25,16 @@ def use_windows_builtin_driver(board, config):
 
 
 def product_str_from_board_config(board, config):
+    if platform.system() == "Windows" and not use_windows_builtin_driver(board, config):
+        return "XMOS USB Audio Device"
+
     if board == "xk_216_mc":
         if config.startswith("1"):
             return "XMOS xCORE-200 MC (UAC1.0)"
         elif config.startswith("2"):
             return "XMOS xCORE-200 MC (UAC2.0)"
     elif board == "xk_316_mc":
-        if platform.system() == "Windows" and not use_windows_builtin_driver(
-            board, config
-        ):
-            return "XMOS XK-AUDIO-316-MC"
-        elif config.startswith("1"):
+        if config.startswith("1"):
             return "XMOS xCORE.ai MC (UAC1.0)"
         elif config.startswith("2"):
             return "XMOS xCORE.ai MC (UAC2.0)"
@@ -51,47 +50,23 @@ def product_str_from_board_config(board, config):
 
 
 def query_device_found(name):
-    if platform.system() == "Windows":
-        desc_re = r"Device Description:\s+(.*)\n"
-        status_re = r"Status:\s+(.*)\n"
-        ret = subprocess.run(
-            ["pnputil", "/enum-devices", "/connected"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        for dev_block in ret.stdout.split("\n\n"):
-            match = re.search(desc_re, dev_block)
-            if not match:
-                continue
+    binary_name = "xsig.exe" if platform.system() == "Windows" else "xsig"
+    xsig_bin = Path(__file__).parent / "tools" / binary_name
+    ret = subprocess.run(
+        [xsig_bin, "--list-devices"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
 
-            dev_desc = match.group(1)
-            if name not in dev_desc:
-                continue
-
-            match = re.search(status_re, dev_block)
-            if not match:
-                continue
-
-            if match.group(1) == "Started":
-                return True
-    elif platform.system() == "Darwin":
-        ret = subprocess.run(
-            ["system_profiler", "SPUSBDataType"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        for line in ret.stdout.split("\n"):
-            if name in line:
-                return True
-    else:
-        pytest.fail(f"Unsupported host platform {platform.system()}")
+    for line in ret.stdout.split("\n"):
+        if name in line:
+            return True
 
     return False
 
 
-def wait_for_enumeration(board, config, adapter_id):
+def wait_for_portaudio(board, config, adapter_id):
     timeout = 30
     prod_str = product_str_from_board_config(board, config)
 
@@ -407,15 +382,14 @@ class XrunDut:
 
     def __enter__(self):
         firmware = get_firmware_path(self.board, self.config)
-        subprocess.run(["xrun", "--adapter-id", self.adapter_id, firmware])
-        self.dev_name = wait_for_enumeration(self.board, self.config, self.adapter_id)
-        # On Windows, need to set different device names based on which driver is being used
-        if platform.system() == "Windows":
-            if use_windows_builtin_driver(self.board, self.config):
-                self.dev_name = "ASIO4ALL v2"
-            else:
-                self.dev_name = "XMOS USB Audio Device"
-        time.sleep(5)
+        subprocess.run(["xrun", "--adapter-id", self.adapter_id, firmware], timeout=30)
+        self.dev_name = wait_for_portaudio(self.board, self.config, self.adapter_id)
+        if platform.system() == "Windows" and use_windows_builtin_driver(
+            self.board, self.config
+        ):
+            # Select ASIO4ALL as device for built-in driver testing (cannot wait for this device
+            # name in wait_for_portaudio because it is always present)
+            self.dev_name = "ASIO4ALL v2"
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -447,10 +421,11 @@ class XsigProcess:
     runtime), a configuration file and the name of the audio device to use.
     """
 
-    def __init__(self, fs, duration, cfg_file, dev_name):
+    def __init__(self, fs, duration, cfg_file, dev_name, ident=None):
         self.duration = 0 if duration is None else duration
         binary_name = "xsig.exe" if platform.system() == "Windows" else "xsig"
-        xsig = Path(__file__).parent / "tools" / binary_name
+        self.xsig_dir = Path(__file__).parent / "tools"
+        xsig = self.xsig_dir / binary_name
         if not xsig.exists():
             pytest.fail(f"xsig binary not present in {xsig.parent}")
         self.xsig_cmd = [
@@ -463,16 +438,35 @@ class XsigProcess:
         ]
         self.proc = None
         self.output_file = None
+        self.ident = ident
 
     def __enter__(self):
         self.proc = subprocess.Popen(
-            self.xsig_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            self.xsig_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=self.xsig_cmd[0].parent,
         )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.proc.poll() is None:
+        if self.proc and (self.proc.poll() is None):
             self.proc.terminate()
+
+        # Rename any glitch data csv files
+        if self.ident:
+            csv_files = self.xsig_dir.glob("*.csv")
+            for file in csv_files:
+                filename = file.name
+
+                # Glitch data files are called glitch.<chan>.sig.csv and glitch.<chan>.fft.csv
+                # Add in the ident string to make the filename unique for the test run
+                artifact_re = r"^(glitch\.)\d.*\.csv$"
+                match = re.search(artifact_re, filename)
+                if match:
+                    pre = match.group(1)
+                    target = self.xsig_dir / f"{pre}{self.ident}.{filename[len(pre):]}"
+                    file.rename(target)
 
     def get_output(self):
         try:
@@ -508,7 +502,7 @@ class XsigInput(XsigProcess):
                     'from pathlib import PosixPath\n'
                     f'with open("{self.output_file.name}", "w+") as f:\n'
                     '    try:\n'
-                    f'        ret = subprocess.run({self.xsig_cmd}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout={self.duration+5})\n'
+                    f'        ret = subprocess.run({self.xsig_cmd}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout={self.duration+5}, cwd=PosixPath("{self.xsig_dir}"))\n'
                     f'    except subprocess.TimeoutExpired:\n'
                     f'        f.write("Timeout running command: {self.xsig_cmd}")\n'
                     '    else:\n'
@@ -526,7 +520,6 @@ class XsigInput(XsigProcess):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.proc is None:
             del self.output_file
-            return
         super().__exit__(exc_type, exc_val, exc_tb)
 
     def get_output(self):

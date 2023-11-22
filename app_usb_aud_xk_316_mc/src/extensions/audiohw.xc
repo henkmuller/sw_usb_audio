@@ -6,13 +6,24 @@
 #include "xua.h"
 #include "../../shared/apppll.h"
 
-#if (XUA_PCM_FORMAT == XUA_PCM_FORMAT_TDM) && (XUA_I2S_N_BITS != 32) 
+#if (XUA_PCM_FORMAT == XUA_PCM_FORMAT_TDM) && (XUA_I2S_N_BITS != 32)
 #warning ADC only supports TDM operation at 32 bits
+#endif
+
+#ifndef I2S_LOOPBACK
+#define I2S_LOOPBACK             (0)
 #endif
 
 port p_scl = PORT_I2C_SCL;
 port p_sda = PORT_I2C_SDA;
-out port p_ctrl = PORT_CTRL;
+out port p_ctrl = PORT_CTRL;                /* p_ctrl:
+                                             * [0:3] - Unused
+                                             * [4]   - EN_3v3_N    (1v0 hardware only)
+                                             * [5]   - EN_3v3A
+                                             * [6]   - EXT_PLL_SEL (CS2100:0, SI: 1)
+                                             * [7]   - MCLK_DIR    (Out:0, In: 1)
+                                             */
+
 on tile[0]: in port p_margin = XS1_PORT_1G;  /* CORE_POWER_MARGIN:   Driven 0:   0.925v
                                               *                      Pull down:  0.922v
                                               *                      High-z:     0.9v
@@ -28,30 +39,27 @@ on tile[0]: in port p_margin = XS1_PORT_1G;  /* CORE_POWER_MARGIN:   Driven 0:  
 #define USE_FRACTIONAL_N         (0)
 #endif
 
-/* p_ctrl:
- * [0:3] - Unused
- * [4]   - EN_3v3_N
- * [5]   - EN_3v3A
- * [6]   - EXT_PLL_SEL (CS2100:0, SI: 1)
- * [7]   - MCLK_DIR    (Out:0, In: 1)
- */
 #if (USE_FRACTIONAL_N)
 #define EXT_PLL_SEL__MCLK_DIR    (0x00)
 #else
 #define EXT_PLL_SEL__MCLK_DIR    (0x80)
 #endif
-void ctrlPort()
+
+/* Board setup for XU316 MC Audio (1v1) */
+void board_setup()
 {
-    // Drive control port to turn on 3V3 and set MCLK_DIR
-    // Note, "soft-start" to reduce current spike
-    // Note, 3v3_EN is inverted
-    for (int i = 0; i < 30; i++)
-    {
-        p_ctrl <: EXT_PLL_SEL__MCLK_DIR | 0x30; /* 3v3: off, 3v3A: on */
-        delay_microseconds(5);
-        p_ctrl <: EXT_PLL_SEL__MCLK_DIR | 0x20; /* 3v3: on, 3v3A: on */
-        delay_microseconds(5);
-    }
+    /* "Drive high mode" - drive high for 1, non-driving for 0 */
+    set_port_drive_high(p_ctrl);
+
+    /* Ensure high-z for 0.9v */
+    p_margin :> void;
+
+    /* Drive control port to turn on 3V3 and mclk direction appropriately.
+     * Bits set to low will be high-z, pulled down */
+    p_ctrl <: EXT_PLL_SEL__MCLK_DIR | 0x20;
+
+    /* Wait for power supplies to be up and stable */
+    delay_milliseconds(10);
 }
 
 /* Working around not being able to extend an unsafe interface (Bugzilla #18670)*/
@@ -140,6 +148,8 @@ uint8_t i2c_reg_read(uint8_t device_addr, uint8_t reg, i2c_regop_res_t &result)
 #define PCM5122_STANDBY_PWDN      0x02 // Standby/Power Down control
 #define PCM5122_MUTE              0x03 // Mute control
 #define PCM5122_PLL               0x04 // PLL control
+#define PMC5122_DE_SDOUT          0x07 // De-Emphasis and SDOUT Select
+#define PMC5122_GPIO_ENABLE       0x08 // GPIO enables
 #define PCM5122_BCK_LRCLK         0x09 // BCK, LRCLK configuration
 #define PCM5122_RBCK_LRCLK        0x0C // BCK, LRCLK reset
 #define PCM5122_SDAC              0x0E // DAC Clock Source Select
@@ -161,6 +171,7 @@ uint8_t i2c_reg_read(uint8_t device_addr, uint8_t reg, i2c_regop_res_t &result)
 #define PCM5122_I2S               0x28 // I2S configuration
 #define PCM5122_I2S_SHIFT         0x29 // I2S shift
 #define PCM5122_AUTO_MUTE         0x41 // Auto Mute
+#define PCM5122_GPIO_OUT_SEL      0x55 // GPIOn output selection
 
 // PCM1865 (4-channel audio ADC) I2C Slave Addresses
 #define PCM1865_0_I2C_DEVICE_ADDR   (0x4A)
@@ -180,6 +191,7 @@ uint8_t i2c_reg_read(uint8_t device_addr, uint8_t reg, i2c_regop_res_t &result)
 #define PCM1865_GPIO01_FUN          (0x10) // Functionality control for GPIO0 and GPIO1.
 #define PCM1865_GPIO01_DIR          (0x12) // Direction control for GPIO0 and GPIO1.
 #define PCM1865_CLK_CFG0            (0x20) // Basic clock config.
+#define PCM1865_PWR_STATE           (0x70) // Power down, Sleep, Standby
 
 unsafe client interface i2c_master_if i_i2c_client;
 
@@ -283,9 +295,9 @@ void AudioHwInit()
     WriteAllAdcRegs(PCM1865_PGA_VAL_CH1_R,  0xFC);
     WriteAllAdcRegs(PCM1865_PGA_VAL_CH2_L,  0xFC);
     WriteAllAdcRegs(PCM1865_PGA_VAL_CH2_R,  0xFC);
-    
+
     if (XUA_PCM_FORMAT == XUA_PCM_FORMAT_I2S)
-    {   
+    {
         /* Convert XUA_I2S_N_BITS to ADC FMT bits */
         int tx_wlen = 0;
         switch(XUA_I2S_N_BITS)
@@ -304,7 +316,7 @@ void AudioHwInit()
         /* Only enable DOUT2 in I2S mode. In TDM mode it doesn't really make sense, wastes power (and data sheet states "not available") */
         WriteAllAdcRegs(PCM1865_GPIO01_FUN,     0x05); // Set GPIO1 as normal polarity, GPIO1 functionality. Set GPIO0 as normal polarity, DOUT2 functionality.
         WriteAllAdcRegs(PCM1865_GPIO01_DIR,     0x04); // Set GPIO1 as an input. Set GPIO0 as an output (used for I2S DOUT2).
-        
+
         /* RX_WLEN:        24-bit (default)
          * TDM_LRCLK_MODE: 0 (default)
          * TX_WLEN:        XUA_I2S_N_BITS
@@ -320,7 +332,7 @@ void AudioHwInit()
         assert(result == I2C_REGOP_SUCCESS && msg("ADC I2C write reg failed"));
         result = i2c_reg_write(PCM1865_1_I2C_DEVICE_ADDR, PCM1865_TX_TDM_OFFSET, 129);
         assert(result == I2C_REGOP_SUCCESS && msg("ADC I2C write reg failed"));
-        
+
         if(CODEC_MASTER)
         {
             /* PCM5122 drives a 1/2 duty cycle LRCLK for TDM */
@@ -401,7 +413,7 @@ void AudioHwInit()
         case 16:
             alen = 0b00;
             break;
-        case 24: 
+        case 24:
             alen = 0b10;
             break;
         case 32:
@@ -430,6 +442,19 @@ void AudioHwInit()
             result = i2c_reg_write(dacAddr, PCM5122_I2S_SHIFT, 1 + (dacOffset * XUA_I2S_N_BITS * 2));
             assert(result == I2C_REGOP_SUCCESS && msg("DAC I2C write reg failed"));
         }
+    }
+
+    if(I2S_LOOPBACK)
+    {
+        WriteAllAdcRegs(PCM1865_RESET, 0xFE);           // Reset all ADC registers.
+        WriteAllAdcRegs(PCM1865_PWR_STATE, 0x77);       // Sets ADCs into powerdown.
+        WriteAllAdcRegs(PCM1865_FMT, 0b01010011);       // Sets 1/256 TDM mode, 32bit TX_WLEN
+        WriteAllAdcRegs(PCM1865_TX_TDM_OFFSET, 191);    // Sets TX_TDM_OFFSET to 191
+                                                        // Note, expect ADCs to clash with DAC channels 7/8 in loopback TDM mode
+
+        WriteAllDacRegs(PMC5122_DE_SDOUT, 0x01);
+        WriteAllDacRegs(PCM5122_GPIO_OUT_SEL, 0x07);
+        WriteAllDacRegs(PMC5122_GPIO_ENABLE, 0x20);
     }
 }
 
@@ -499,7 +524,7 @@ void AudioHwConfig(unsigned samFreq, unsigned mClk, unsigned dsdMode, unsigned s
     {
         // Do any changes to input clocks here
         // The following divider generates the DAC clock from the master clock.
-        // DAC clock needs to be 5.6448MHz for 44.1/88.2/176.4kHz SRs and 6.144MHz for 48/96/192 SRs. 
+        // DAC clock needs to be 5.6448MHz for 44.1/88.2/176.4kHz SRs and 6.144MHz for 48/96/192 SRs.
         // So if using 22.5792/24.576 MCLK this needs to be 4. For 45.1584/49.152MHz this needs to be 8. Note to set a divider of 4 we write 0x03.
         WriteAllDacRegs(PCM5122_DDAC,           0x03); // sets DAC clock divider NDAC to 4.
 
