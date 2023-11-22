@@ -1,11 +1,14 @@
 Extending USB Audio with Digital Signal Processing
 ==================================================
 
-In this app note we describe how to implement a DSP system on the xcore building on the XMOS USB Audio stack.
+In this app note we describe how to implement a DSP system on the xcore
+building on the XMOS USB Audio stack.
 
 USB Audio is a highly configurable piece of software; in its simplest form
 it may just interface a single ADC to USB Audio; but it can deal with a
-multitude of I2S, TDM, DSD, S/PDIF, ADAT and other interfaces. As such, it provides a useful framework to support the DSP functionality that may include:
+multitude of I2S, TDM, DSD, S/PDIF, ADAT and other interfaces. As such, it
+provides a useful framework to support the DSP functionality that may
+include:
 
 * Equalisation
 
@@ -15,7 +18,11 @@ multitude of I2S, TDM, DSD, S/PDIF, ADAT and other interfaces. As such, it provi
 
 * Audio effects
 
-This app note discusses the recommended method of partitioning the DSP functionality between multiple xcore threads, integrating them into a system with the audio interfaces using the USB audio stack API and tuning the DSP system in-situ using the XSCOPE to monitor signals in the DSP pipeline.
+This app note discusses the recommended method of partitioning the DSP
+functionality between multiple xcore threads, integrating them into a
+system with the audio interfaces using the USB audio stack API and tuning
+the DSP system in-situ using the XSCOPE to monitor signals in the DSP
+pipeline.
 
 For reference, we refer to the following repositories that you may want to
 use:
@@ -47,25 +54,42 @@ The DSP graph code
 
 Developing a DSP pipeline typically consists of a number of distinct phases:
 
-1. Capture - Assemble chains of DSP component functions using DSP library components optimised for the target micro-architecture with, where necessary, customised DSP elements.
+1. Capture - Assemble chains of DSP component functions using DSP library
+   components optimised for the target micro-architecture with, where
+   necessary, customised DSP elements.
 
-2. Configure - Determine the filter coefficients to satisfy the frequency domain requirements.
+2. Configure - Determine the filter coefficients to satisfy the frequency
+   domain requirements.
 
 3. Tune - Tune the DSP pipeline using representative signal samples
 
-4. Port - Transfer the DSP pipeline to the target device, implementing the scheduler to respond to the arrival of samples.
+4. Port - Transfer the DSP pipeline to the target device, implementing the
+   scheduler to respond to the arrival of samples.
 
-The xcore devices support the XSCOPE high-performance debugging interface with minimal impact on the real-time performance of the application under development. This enables the use of the score itself as the DSP development environment by providing the ability to drive test samples and monitor any point in the DSP pipeline. For audio applications the high-performance of the XSCOPE interface enables continuous monitoring in real-time.
+The xcore devices support the XSCOPE high-performance debugging interface
+with minimal impact on the real-time performance of the application under
+development. This enables the use of the score itself as the DSP
+development environment by providing the ability to drive test samples and
+monitor any point in the DSP pipeline. For audio applications the
+high-performance of the XSCOPE interface enables continuous monitoring in
+real-time.
 
-This on-device development environment offers the significant advantages of tuning the DSP pipeline in-situ with real data and eliminating risks associated with the porting of the DSP pipeline to the target device in addition to the use of custom DSP components without the development of an equivalent model for an external development environment.
+This on-device development environment offers the significant advantages of
+tuning the DSP pipeline in-situ with real data and eliminating risks
+associated with the porting of the DSP pipeline to the target device in
+addition to the use of custom DSP components without the development of an
+equivalent model for an external development environment.
 
 Using in-situ DSP pipeline development, the development flow becomes:
 
-1. Capture - Assemble chains of DSP component functions using DSP library components optimised for the target micro-architecture with, where necessary, customised DSP elements.
+1. Capture - Assemble chains of DSP component functions using DSP library
+   components optimised for the target micro-architecture with, where
+   necessary, customised DSP elements.
 
 2. Map - Partition the DSP pipeline between the xcore threads.
 
-3. Configure - Determine the filter coefficients to satisfy the frequency domain requirements.
+3. Configure - Determine the filter coefficients to satisfy the frequency
+   domain requirements.
 
 4. Tune - Tune the DSP pipeline using representative signal samples
 
@@ -87,81 +111,167 @@ ease-of-use.
 * <https://github.com/xmos/lib_audio_effects> for audio effects
   functions. (this is based on ``lib_dsp`` above)
 
-These functions and components, along with any custom DSP components are assenbled to form the DSP graph. At this point, the DSP graph can reside in a single thread; the performance will be limited to 20% of the performance from a single xcore tile but can be tested with test data.
+These functions and components, along with any custom DSP components are
+assenbled to form the DSP graph. At this point, the DSP graph can reside in
+a single thread; the performance will be limited to 20% of the performance
+from a single xcore tile but can be tested with test data.
 
 Map
 ---
 
-The mapping process is a stage that is not necessary with a single-threaded, dedicated DSP device. However, DSP systems often contain multiple interfaces and the dedicated DSP device needs to implement a scheduler to process each individual data stream which is greatly simplified with a multi-threaded platform. More importantly, when the DSP pipeline interfaces between interfaces operating at different sample rates, this scheduling task is very complex but a multi-threaded xcore platform can operate different threads in each clock domain.
+The mapping process is a stage that is not necessary with a
+single-threaded, dedicated DSP device. However, DSP systems often contain
+multiple interfaces and the dedicated DSP device needs to implement a
+scheduler to process each individual data stream which is greatly
+simplified with a multi-threaded platform. More importantly, when the DSP
+pipeline interfaces between interfaces operating at different sample rates,
+this scheduling task is very complex but a multi-threaded xcore platform
+can operate different threads in each clock domain.
 
 Mapping the DSP pipeline to xcore threads is a three stage process:
 
-1. Split the DSP graph into sub-graphs for each sample clock domain if applicable. Interfaces between the sub-graphs are supported through the sample rate conversion component available in the lib_src library.
+1. Split the DSP graph into sub-graphs for each sample clock domain if
+   applicable. Interfaces between the sub-graphs are supported through the
+   sample rate conversion component available in the lib_src library.
 
-2. For each sub-graph, partition the elementary DSP components into further sub-graphs where the combined instruction count of the elements can be supported by the thread within the sample period.
+2. For each sub-graph, partition the elementary DSP components into further
+   sub-graphs where the combined instruction count of the elements can be
+   supported by the thread within the sample period.
 
-DSP requires guaranteed, hard real-time execution and the unique multi-threaded micro-architecture of the xcore pipeline along with the single cycle access to on-chip primary memory, ensures that each instruction completes its path through the pipeline before executing the following instruction, eliminating data hazard and memory latency uncertainty. This means that it is  straight forward to calculate the latency of the sub-graph.
+DSP requires guaranteed, hard real-time execution and the unique
+multi-threaded micro-architecture of the xcore pipeline along with the
+single cycle access to on-chip primary memory, ensures that each
+instruction completes its path through the pipeline before executing the
+following instruction, eliminating data hazard and memory latency
+uncertainty. This means that it is straight forward to calculate the
+latency of the sub-graph.
 
-Allowing 30 instruction slots for each exchange of samples between threads, the number of instructions available for the DSP components is readily calculated.
+Allowing 30 instruction slots for each exchange of samples between threads,
+the number of instructions available for the DSP components is readily
+calculated.
 
-Inside the thread, the DSP sub-graph is statically scheduled through the ordering of the individual DSP component functions. To link to the rest of the graph in the other threads, two additional functions are required: one to initiate communication by sending the requests through the channels, followed by another to wait for the response events and updating the state variables appropriately.
+Inside the thread, the DSP sub-graph is statically scheduled through the
+ordering of the individual DSP component functions. To link to the rest of
+the graph in the other threads, two additional functions are required: one
+to initiate communication by sending the requests through the channels,
+followed by another to wait for the response events and updating the state
+variables appropriately.
 
-Each DSP component needs to start from a known state. The recommended state is where all sample history is set to zero. The code could start to execute at any point but compuing new samples from the initialised state is pointless so it is recommended that each thread starts at the point of exchanging data with other threads. This ensures that the threads are primed for teh samples from input interfaces as soon as they become available.
+Each DSP component needs to start from a known state. The recommended state
+is where all sample history is set to zero. The code could start to execute
+at any point but compuing new samples from the initialised state is
+pointless so it is recommended that each thread starts at the point of
+exchanging data with other threads. This ensures that the threads are
+primed for teh samples from input interfaces as soon as they become
+available.
 
-Deadlock
---------
+Deadlock --------
 
-When designing a multi-threaded application with communication between the threads, care is required to avoid creating a deadlock which can arise from a dependency loop from data, code or limited resources.
+When designing a multi-threaded application with communication between the
+threads, care is required to avoid creating a deadlock which can arise from
+a dependency loop from data, code or limited resources.
 
-A pipelined DSP system behaves in a similar way to a synchronous hardware implementation where combinatorial logic determines the next state of each bank of registers while the update of the registers communicates the new stae to the other combinatorial blocks after the edge of the synchronous clock. Since the updates that are communicated between threads are functions of the previous timestep's values, there is no data dependency to cause a deadlock in the communication.
+A pipelined DSP system behaves in a similar way to a synchronous hardware
+implementation where combinatorial logic determines the next state of each
+bank of registers while the update of the registers communicates the new
+stae to the other combinatorial blocks after the edge of the synchronous
+clock. Since the updates that are communicated between threads are
+functions of the previous timestep's values, there is no data dependency to
+cause a deadlock in the communication.
 
-The channels that support communication between threads in an xcore are blocking but the channel ends at the destination provide some buffering. If every transaction initiates by sending a request token to the destination, blocking is avoided eliminating resource deadlocking. The request token communication is built in to the communication code examples used for building DSP pipelines on the xcore.
+The channels that support communication between threads in an xcore are
+blocking but the channel ends at the destination provide some buffering. If
+every transaction initiates by sending a request token to the destination,
+blocking is avoided eliminating resource deadlocking. The request token
+communication is built in to the communication code examples used for
+building DSP pipelines on the xcore.
 
-When a communication takes place over a channel between two threads, the code execution of the threads aligns around the data transfer but the ordering of communication in each thread must follow the correct order to avoid deadlock.
+When a communication takes place over a channel between two threads, the
+code execution of the threads aligns around the data transfer but the
+ordering of communication in each thread must follow the correct order to
+avoid deadlock.
 
-Since we have ensured that the resource availability is not blocking and that there is no data dependency, we are free to choose the ordering of the transactions between the threads and code them appropriately.
+Since we have ensured that the resource availability is not blocking and
+that there is no data dependency, we are free to choose the ordering of the
+transactions between the threads and code them appropriately.
 
-Communication scheduling
-++++++++++++++++++++++++
+Communication scheduling ++++++++++++++++++++++++
 
-In each sample synchronous sub-system, data is exchanged between threads once per sample and we are free to choose the ordering that maximises performance.
+In each sample synchronous sub-system, data is exchanged between threads
+once per sample and we are free to choose the ordering that maximises
+performance.
 
-The total time taken to complete the data exchange is less important than the time each thread requires to complete its communication; once a thread has completed its communication, it is free to process the next sample while other threads are still communicating. Consequently, the performance optimisation is obtained when the communication time for each thread is minimised, maximising the instructions available to compute the next sample.
+The total time taken to complete the data exchange is less important than
+the time each thread requires to complete its communication; once a thread
+has completed its communication, it is free to process the next sample
+while other threads are still communicating. Consequently, the performance
+optimisation is obtained when the communication time for each thread is
+minimised, maximising the instructions available to compute the next
+sample.
 
-In the USB Audio platform the communication from the interfaces to and from the DSP pipeline are adjacent and should, therefore, be consequitive. In general, for threads that have a single sample input and output, the optimal communication ordering will be to propagate the communication along the signal path but we are free to choose the direction which can be the opposite of the signal sample flow.
+In the USB Audio platform the communication from the interfaces to and from
+the DSP pipeline are adjacent and should, therefore, be consequitive. In
+general, for threads that have a single sample input and output, the
+optimal communication ordering will be to propagate the communication along
+the signal path but we are free to choose the direction which can be the
+opposite of the signal sample flow.
 
-3. Exploiting parallel paths within the DSP pipeline allows the use of individual threads for each path, extending the width of DSP elements that can be accommodated within each thread. This reduces the latency of the DSP pipeline implementation.
+3. Exploiting parallel paths within the DSP pipeline allows the use of
+   individual threads for each path, extending the width of DSP elements
+   that can be accommodated within each thread. This reduces the latency of
+   the DSP pipeline implementation.
 
-Configure
-+++++++++
+Configure +++++++++
 
-Filter coefficients are determined from the required filter characteristics. XMOS provides a suite of Python scripts to map filter characteristics to data structures containing the filter coefficients.
+Filter coefficients are determined from the required filter
+characteristics. XMOS provides a suite of Python scripts to map filter
+characteristics to data structures containing the filter coefficients.
 
-The xcore scalar pipeline supports a wide range of data-types including single precision floating point while the vector processing pipeline offers SIMD capabilities supporting eight 32-bit operations in each instruction but is limited to fixed point data formats. Consequently, to maximise the performance, fixed-point data-types should be used where possible.
+The xcore scalar pipeline supports a wide range of data-types including
+single precision floating point while the vector processing pipeline offers
+SIMD capabilities supporting eight 32-bit operations in each instruction
+but is limited to fixed point data formats. Consequently, to maximise the
+performance, fixed-point data-types should be used where possible.
 
-In an embedded DSP application, the data is provided in a fixed-point format from ADCs, DACs and digital audio interfaces. While the dynamic range of the signal can be different at each stage of the DSP pipeline, it is static and can be readily accommodated by gain terms.
+In an embedded DSP application, the data is provided in a fixed-point
+format from ADCs, DACs and digital audio interfaces. While the dynamic
+range of the signal can be different at each stage of the DSP pipeline, it
+is static and can be readily accommodated by gain terms.
 
-Tune
-++++
+Tune ++++
 
-The XSCOPE debugging interface can write data structures to memory in the xcore as well as stream signals from points along the DSP pipeline. The bandwidth available through the XSCOPE interface is sufficient to monitor several signals in real time for audio applications.
+The XSCOPE debugging interface can write data structures to memory in the
+xcore as well as stream signals from points along the DSP pipeline. The
+bandwidth available through the XSCOPE interface is sufficient to monitor
+several signals in real time for audio applications.
 
 A monitoring point is selected by adding the code:
 
  xscope_int(channel, signal);
 
-where required in the DSP code. The debugger generates a standard VCD file for the signals to be viewed through the user's preferred VCD viewer.
+where required in the DSP code. The debugger generates a standard VCD file
+for the signals to be viewed through the user's preferred VCD viewer.
 
 Integration of the DSP pipeline into the system
 -----------------------------------------------
 
-The flexibility of the threads in the xcore enable single device embedded solutions by integrating a diverse range of compute requirements including DSP, IO, Control and AI inference models.
+The flexibility of the threads in the xcore enable single device embedded
+solutions by integrating a diverse range of compute requirements including
+DSP, IO, Control and AI inference models.
 
-In most cases, the peripheral interfaces will drive the DSP pipeline and define the sample rate. These interfaces can be considered to behave in the same way as any other DSP component and can be integrated into the DSP pipeline like a DSP element.
+In most cases, the peripheral interfaces will drive the DSP pipeline and
+define the sample rate. These interfaces can be considered to behave in the
+same way as any other DSP component and can be integrated into the DSP
+pipeline like a DSP element.
 
-In an embedded application there will be a control layer which will take responsibility for controling the operation of the DSP pipeline by setting its parameters, for example, the control layer may be controlling the display and user input peripherals in order to control the characteristics of the DSP pipeline.
+In an embedded application there will be a control layer which will take
+responsibility for controling the operation of the DSP pipeline by setting
+its parameters, for example, the control layer may be controlling the
+display and user input peripherals in order to control the characteristics
+of the DSP pipeline.
 
-An efficient method of acquiring the necessary interfaces is to extend one of the XMOS' existing platforms such as the USB Audio platform.
+An efficient method of acquiring the necessary interfaces is to extend one
+of the XMOS' existing platforms such as the USB Audio platform.
   
 Introduction to USB Audio
 -------------------------
@@ -568,9 +678,20 @@ that five other threads can be used to soak up the available DSP.
 Optimised Data Pipelining DSP
 -----------------------------
 
-Since we have the flexibility to choose the order of the communication processes in a sample synchronous system, we can eliminate the DSP distribution thread.
+Since we have the flexibility to choose the order of the communication
+processes in a sample synchronous system, we can eliminate the DSP
+distribution thread.
 
-We base the communication timing from the communication from the Buffer Manager thread. DSP task0 receives a sample from the Buffer Manager thread. It then sends data to DSP task 1A and DSP taskB in that order which is a sequence of three sequential communication processes. DSP task2 sends data to the Buffer Manager thread then receives data from DSP task1A and DSP task1B in that order which is, again, a sequence of three sequential communication processes. The communication to and from each of DSP task1A and DSP task1B are adjacent. This pipeline completes the communication to and from each thread in the minimum possible time, maximising the instructions available for the computation of the next samples.
+We base the communication timing from the communication from the Buffer
+Manager thread. DSP task0 receives a sample from the Buffer Manager thread.
+It then sends data to DSP task 1A and DSP taskB in that order which is a
+sequence of three sequential communication processes. DSP task2 sends data
+to the Buffer Manager thread then receives data from DSP task1A and DSP
+task1B in that order which is, again, a sequence of three sequential
+communication processes. The communication to and from each of DSP task1A
+and DSP task1B are adjacent. This pipeline completes the communication to
+and from each thread in the minimum possible time, maximising the
+instructions available for the computation of the next samples.
 
 The pipeline that we're building is shown in
 :ref:`extending_usb_audio_with_digital_signal_processing_pipeline_figure`. 
