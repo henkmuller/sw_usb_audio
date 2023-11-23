@@ -1,8 +1,9 @@
 Extending USB Audio with Digital Signal Processing
 ==================================================
 
-In this app note we describe how to implement a DSP system on the xcore
-building on the XMOS USB Audio stack.
+In this app note we describe how to implement a DSP system on the xcore. As
+an example, we integrate it into the XMOS USB Audio stack. Integration into
+other programs follows a very similar process.
 
 USB Audio is a highly configurable piece of software; in its simplest form
 it may just interface a single ADC to USB Audio; but it can deal with a
@@ -34,53 +35,19 @@ use:
   design
 
 
-Header to be created
---------------------
+Introduction
+------------
 
-And text above to be modified
+In its simplest case, DSP can be added to a program by simply adding a
+number of function calls. Each function call typically processes a sample
+and produces a sample. This app note starts with that case, and then
+extends to the case where so much signal processing needs to be done that
+multiple concurrent DSP tasks need to be fired off. The latter takes
+advantage of the multi-threaded nature of the XCORE.AI processor where each
+thread is allocated part of the processing bandwidth.
 
-With the possible exception of the FFT family of functions, the DSP
-components are unlikely to benefit from a multi-threaded implementation but
-a single-threaded implementation on a single thread is limited to 20% of
-the tile’s performance. Two options remain for the use of multiple threads
-to increase the utilization of a DSP sub-system:
-
-1. Exploit the natural concurrency in the DSP pipeline
-
-2. Pipeline the DSP graph through threads
-
-The DSP graph code
-++++++++++++++++++
-
-Developing a DSP pipeline typically consists of a number of distinct phases:
-
-1. Capture - Assemble chains of DSP component functions using DSP library
-   components optimised for the target micro-architecture with, where
-   necessary, customised DSP elements.
-
-2. Configure - Determine the filter coefficients to satisfy the frequency
-   domain requirements.
-
-3. Tune - Tune the DSP pipeline using representative signal samples
-
-4. Port - Transfer the DSP pipeline to the target device, implementing the
-   scheduler to respond to the arrival of samples.
-
-The xcore devices support the XSCOPE high-performance debugging interface
-with minimal impact on the real-time performance of the application under
-development. This enables the use of the score itself as the DSP
-development environment by providing the ability to drive test samples and
-monitor any point in the DSP pipeline. For audio applications the
-high-performance of the XSCOPE interface enables continuous monitoring in
-real-time.
-
-This on-device development environment offers the significant advantages of
-tuning the DSP pipeline in-situ with real data and eliminating risks
-associated with the porting of the DSP pipeline to the target device in
-addition to the use of custom DSP components without the development of an
-equivalent model for an external development environment.
-
-Using in-situ DSP pipeline development, the development flow becomes:
+This process is called developing a DSP pipeline, and it consists
+of a number of distinct phases:
 
 1. Capture - Assemble chains of DSP component functions using DSP library
    components optimised for the target micro-architecture with, where
@@ -93,8 +60,23 @@ Using in-situ DSP pipeline development, the development flow becomes:
 
 4. Tune - Tune the DSP pipeline using representative signal samples
 
+Typically there would a be a final phase to port the pipeline, however,
+the xcore devices support the XSCOPE high-performance debugging interface
+with minimal impact on the real-time performance of the application under
+development. This enables the use of the XCORE itself for tuning
+by providing the ability to drive test samples and
+monitor any point in the DSP pipeline. For audio applications the
+high-performance of the XSCOPE interface enables continuous monitoring in
+real-time.
+
+This on-device development environment offers the significant advantages of
+tuning the DSP pipeline in-situ with real data and eliminating risks
+associated with the porting of the DSP pipeline to the target device in
+addition to the use of custom DSP components without the development of an
+equivalent model for an external development environment.
+
 Capture
--------
++++++++
 
 There are a few repositories with DSP and general maths functions
 available, with different trade-offs between speed, accuracy, and
@@ -108,6 +90,9 @@ ease-of-use.
   that execute on the CPU often using 64-bit accumulators. These functions
   are not as fast as ``lib_xcore_math``
 
+* <https://github.com/xmos/lib_src> for synchronous and asynchronous sample
+  rate conversion functions.
+
 * <https://github.com/xmos/lib_audio_effects> for audio effects
   functions. (this is based on ``lib_dsp`` above)
 
@@ -117,7 +102,7 @@ a single thread; the performance will be limited to 20% of the performance
 from a single xcore tile but can be tested with test data.
 
 Map
----
++++
 
 The mapping process is a stage that is not necessary with a
 single-threaded, dedicated DSP device. However, DSP systems often contain
@@ -128,11 +113,11 @@ pipeline interfaces between interfaces operating at different sample rates,
 this scheduling task is very complex but a multi-threaded xcore platform
 can operate different threads in each clock domain.
 
-Mapping the DSP pipeline to xcore threads is a three stage process:
+Mapping the DSP pipeline to xcore threads is a two stage process:
 
 1. Split the DSP graph into sub-graphs for each sample clock domain if
    applicable. Interfaces between the sub-graphs are supported through the
-   sample rate conversion component available in the lib_src library.
+   sample rate conversion component available in the ``lib_src`` library.
 
 2. For each sub-graph, partition the elementary DSP components into further
    sub-graphs where the combined instruction count of the elements can be
@@ -140,18 +125,18 @@ Mapping the DSP pipeline to xcore threads is a three stage process:
 
 DSP requires guaranteed, hard real-time execution and the unique
 multi-threaded micro-architecture of the xcore pipeline along with the
-single cycle access to on-chip primary memory, ensures that each
+single-cycle access to on-chip primary memory, ensures that each
 instruction completes its path through the pipeline before executing the
 following instruction, eliminating data hazard and memory latency
 uncertainty. This means that it is straight forward to calculate the
 latency of the sub-graph.
 
-Allowing 30 instruction slots for each exchange of samples between threads,
+Allowing a handful of instruction slots for each exchange of samples between threads,
 the number of instructions available for the DSP components is readily
 calculated.
 
 Inside the thread, the DSP sub-graph is statically scheduled through the
-ordering of the individual DSP component functions. To link to the rest of
+ordering of the individual DSP component functions. In order to link to the rest of
 the graph in the other threads, two additional functions are required: one
 to initiate communication by sending the requests through the channels,
 followed by another to wait for the response events and updating the state
@@ -162,40 +147,23 @@ is where all sample history is set to zero. The code could start to execute
 at any point but compuing new samples from the initialised state is
 pointless so it is recommended that each thread starts at the point of
 exchanging data with other threads. This ensures that the threads are
-primed for teh samples from input interfaces as soon as they become
+primed for the samples from input interfaces as soon as they become
 available.
-
-Deadlock --------
 
 When designing a multi-threaded application with communication between the
 threads, care is required to avoid creating a deadlock which can arise from
 a dependency loop from data, code or limited resources.
 
-A pipelined DSP system behaves in a similar way to a synchronous hardware
-implementation where combinatorial logic determines the next state of each
-bank of registers while the update of the registers communicates the new
-stae to the other combinatorial blocks after the edge of the synchronous
-clock. Since the updates that are communicated between threads are
-functions of the previous timestep's values, there is no data dependency to
-cause a deadlock in the communication.
+Data dependencies are avoided in that we, like in hardware, compute an
+output state based on an input state. Given an input state, we perform a
+series of DSP functions until the final function yields the output state.
+There are no data dependencies.
 
 The channels that support communication between threads in an xcore are
-blocking but the channel ends at the destination provide some buffering. If
-every transaction initiates by sending a request token to the destination,
-blocking is avoided eliminating resource deadlocking. The request token
-communication is built in to the communication code examples used for
-building DSP pipelines on the xcore.
-
-When a communication takes place over a channel between two threads, the
+lossless and therefore block. When a communication takes place over a channel between two threads, the
 code execution of the threads aligns around the data transfer but the
 ordering of communication in each thread must follow the correct order to
 avoid deadlock.
-
-Since we have ensured that the resource availability is not blocking and
-that there is no data dependency, we are free to choose the ordering of the
-transactions between the threads and code them appropriately.
-
-Communication scheduling ++++++++++++++++++++++++
 
 In each sample synchronous sub-system, data is exchanged between threads
 once per sample and we are free to choose the ordering that maximises
@@ -216,14 +184,16 @@ optimal communication ordering will be to propagate the communication along
 the signal path but we are free to choose the direction which can be the
 opposite of the signal sample flow.
 
-3. Exploiting parallel paths within the DSP pipeline allows the use of
-   individual threads for each path, extending the width of DSP elements
-   that can be accommodated within each thread. This reduces the latency of
-   the DSP pipeline implementation.
+Exploiting parallel paths within the DSP pipeline allows the use of
+individual threads for each path, extending the width of DSP elements
+that can be accommodated within each thread. This reduces the latency of
+the DSP pipeline implementation.
 
-Configure +++++++++
+Configure
++++++++++
 
-Filter coefficients are determined from the required filter
+Filter coefficients for, for example, FIR and IIR filters
+are determined from the required filter
 characteristics. XMOS provides a suite of Python scripts to map filter
 characteristics to data structures containing the filter coefficients.
 
@@ -231,29 +201,30 @@ The xcore scalar pipeline supports a wide range of data-types including
 single precision floating point while the vector processing pipeline offers
 SIMD capabilities supporting eight 32-bit operations in each instruction
 but is limited to fixed point data formats. Consequently, to maximise the
-performance, fixed-point data-types should be used where possible.
-
-In an embedded DSP application, the data is provided in a fixed-point
-format from ADCs, DACs and digital audio interfaces. While the dynamic
+performance, fixed-point data-types should be used where possible. This is
+also desirable as the interfaces on either side of the pipeline (I2S,
+TDM, ADAT, S/PDIF, USB, AVB) typically use fixed point formats.
+While the dynamic
 range of the signal can be different at each stage of the DSP pipeline, it
 is static and can be readily accommodated by gain terms.
 
-Tune ++++
+Tune
+++++
 
 The XSCOPE debugging interface can write data structures to memory in the
 xcore as well as stream signals from points along the DSP pipeline. The
 bandwidth available through the XSCOPE interface is sufficient to monitor
 several signals in real time for audio applications.
 
-A monitoring point is selected by adding the code:
+A monitoring point is selected by adding the code::
 
- xscope_int(channel, signal);
+  xscope_int(channel, signal);
 
 where required in the DSP code. The debugger generates a standard VCD file
 for the signals to be viewed through the user's preferred VCD viewer.
 
 Integration of the DSP pipeline into the system
------------------------------------------------
++++++++++++++++++++++++++++++++++++++++++++++++
 
 The flexibility of the threads in the xcore enable single device embedded
 solutions by integrating a diverse range of compute requirements including
@@ -304,7 +275,7 @@ matter for addition of simple DSP. Also, the physical core used for the USB
 stack may be tile 0 or tile 1 depending on the design.
 
 API offered by USB Audio
-------------------------
+++++++++++++++++++++++++
 
 The USB Audio stack provides one function that you need to override in
 order to add any DSP capability to your system:
@@ -375,7 +346,7 @@ This is not a necessarily a realistic set of filters, but it is something
 that can easily be heard.
 
 Timing requirements
--------------------
++++++++++++++++++++
 
 The XMOS USB Audio stack is designed to operate on single samples in order
 to minimise latency introduced by the audio stacks. The
@@ -694,9 +665,9 @@ and from each thread in the minimum possible time, maximising the
 instructions available for the computation of the next samples.
 
 The pipeline that we're building is shown in
-:ref:`extending_usb_audio_with_digital_signal_processing_pipeline_figure`. 
+:ref:`extending_usb_audio_with_digital_signal_processing_optimised_pipeline_figure`. 
 
-.. _extending_usb_audio_with_digital_signal_processing_pipeline_figure:
+.. _extending_usb_audio_with_digital_signal_processing_optimised_pipeline_figure:
 
 .. figure:: images/example-pipeline.*
 
@@ -751,9 +722,9 @@ starts five tasks, and connects them up using six channels:
    :end-before: //:dmainend
 
 In order to show how this code works, we show a diagram in
-:ref:`extending_usb_audio_with_digital_signal_processing_pipeline_timing`. 
+:ref:`extending_usb_audio_with_digital_signal_processing_optimised_pipeline_timing`. 
 
-.. _extending_usb_audio_with_digital_signal_processing_pipeline_timing:
+.. _extending_usb_audio_with_digital_signal_processing_optimised_pipeline_timing:
 
 .. figure:: images/timelines-complex-thread.*
 
