@@ -97,7 +97,7 @@ ease-of-use.
   functions. (this is based on ``lib_dsp`` above)
 
 These functions and components, along with any custom DSP components are
-assenbled to form the DSP graph. At this point, the DSP graph can reside in
+assembled to form the DSP graph. At this point, the DSP graph can reside in
 a single thread; the performance will be limited to 20% of the performance
 from a single xcore tile but can be tested with test data.
 
@@ -144,7 +144,7 @@ variables appropriately.
 
 Each DSP component needs to start from a known state. The recommended state
 is where all sample history is set to zero. The code could start to execute
-at any point but compuing new samples from the initialised state is
+at any point but computing new samples from the initialised state is
 pointless so it is recommended that each thread starts at the point of
 exchanging data with other threads. This ensures that the threads are
 primed for the samples from input interfaces as soon as they become
@@ -178,7 +178,7 @@ minimised, maximising the instructions available to compute the next
 sample.
 
 In the USB Audio platform the communication from the interfaces to and from
-the DSP pipeline are adjacent and should, therefore, be consequitive. In
+the DSP pipeline are adjacent and should, therefore, be consecutive. In
 general, for threads that have a single sample input and output, the
 optimal communication ordering will be to propagate the communication along
 the signal path but we are free to choose the direction which can be the
@@ -236,14 +236,72 @@ same way as any other DSP component and can be integrated into the DSP
 pipeline like a DSP element.
 
 In an embedded application there will be a control layer which will take
-responsibility for controling the operation of the DSP pipeline by setting
+responsibility for controlling the operation of the DSP pipeline by setting
 its parameters, for example, the control layer may be controlling the
 display and user input peripherals in order to control the characteristics
 of the DSP pipeline.
 
 An efficient method of acquiring the necessary interfaces is to extend one
 of the XMOS' existing platforms such as the USB Audio platform.
-  
+
+DSP Pipelines
+-------------
+
+In this section we summarise the principles of what a DSP pipeline looks
+like typically. We assume that the reader is familiar with DSP. A typical
+pipeline is shown in 
+:ref:`extending_usb_audio_with_digital_signal_processing_dsp_basic_pipe`.
+In this pipeline digital samples enter the pipeline (on the left-hand-side
+in this case), flow through a series of DSP blocks, and eventually samples
+leave the pipeline (on the right-hand-side in this case).
+
+.. _extending_usb_audio_with_digital_signal_processing_dsp_basic_pipe:
+
+.. figure:: images/dsp-basic-pipe.*
+
+            Typical pipeline of DSP operations
+
+We use the following terminology to describe these systems:
+
+* Samples enter the pipeline at a sample-rate. This sample rate may be
+  48,000 Hz for an audio pipeline. Samples also exit the pipeline at a
+  sample rate, and each of the blocks pass data along at a sample rate.
+  Where the sample rate on input and output is not the same we typically
+  have a sample-rate-conversion. In this document we assume that all
+  sample-rates are synchronous to a single clock, and that all sample rate
+  conversions are synchronous
+
+* There may be multiple channels. For example, a system may be mono (single
+  channel), stereo (two channels) or 7.1 (eight channels). We call one
+  sample on each channel a *frame*, and hence the word frame-rate may be
+  used interchangeably with the word sample-rate.
+
+* Frames may be blocked for efficiency or for algorithm considerations. For
+  example, we may choose for the DSP pipeline to operate on blocks of 48
+  frames. If the frame-rate is 48,000 Hz that means that the DSP pipeline
+  operates on a heart-beat of 1,000 Hz (1 ms). Blocking may improve
+  efficiency but will also increase latency through the pipeline. Blocking
+  may be unavoidable for certain algorithms such as an FFT.
+
+* Samples are stored in a data-format, for example, 16-bit int, 24-bit int,
+  or float. This document is agnostic to the data-format used, but we
+  generally advise that for all integer formats data is stored in the
+  higher-order-bits of a 32-bit word (that makes all modules agnostic to
+  the particular input format). Floating point is also possible but usually
+  not as efficient.
+
+Given a pipeline of DSP operations, these can be trivially mapped onto a
+single C-function where each statement implements one of the blocks of the
+DSP pipeline (by calling an appropriate DSP function), and data is passed
+from one function to the next through the use of an array of data where the
+array is large enough to hold a block of frames. Each function may require
+some local state (eg, biquads, FIRs) that is passed along subsequent
+iterations.
+
+This document uses those functions as a starting point, and discusses how
+to integrate those functions on an XCORE, and how to split those functions
+up over multiple threads.
+
 Introduction to USB Audio
 -------------------------
 
